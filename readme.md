@@ -67,12 +67,12 @@ You can run the server in different modes:
 Pull the Docker image:
  
   ```bash
-  docker pull your-dockerhub-username/bearmq:tag
+  docker pull angga2oioi/bearmq:latest
 
   ```
 Run the container:
 ```bash
-docker run -p 3000:3000 your-dockerhub-username/bearmq:tag
+docker run -p 3000:3000 angga2oioi/bearmq:latest
 ```
 ## Configuration
 
