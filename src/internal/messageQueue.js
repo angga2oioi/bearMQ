@@ -33,16 +33,24 @@ class MessageQueue {
   }
 
   ack(jobId, keyHash, socket) {
-    const job = this.activeJobs.get(socket.id);
-    if (job && job.jobId === jobId) {
-      this.locks.delete(keyHash); // Release the lock for the key
-      this.activeJobs.set(socket.id, { ...job, jobId: null }); // Mark job as completed for the socket
-      this.dispatch(); // Dispatch next job
+    const jobs = this.activeJobs.get(socket.id); // Get all active jobs for this socket
+    if (jobs) {
+      const jobIndex = jobs.findIndex(job => job.jobId === jobId);
+      if (jobIndex >= 0) {
+        this.locks.delete(keyHash); // Release the lock for the key
+        jobs.splice(jobIndex, 1); // Remove the acknowledged job from the active jobs list
+        this.activeJobs.set(socket.id, jobs); // Update the active jobs list for the socket
+        this.dispatch(); // Dispatch next job
+      } else {
+        // Handle error if the jobId doesn't match (optional)
+        console.error("Job ID mismatch or invalid acknowledgment");
+      }
     } else {
-      // Handle error if the jobId doesn't match (optional)
-      console.error("Job ID mismatch or invalid acknowledgment");
+      console.error("No active jobs for this socket");
     }
+
   }
+
 
   dispatch() {
     for (const socket of this.subscribers) {
