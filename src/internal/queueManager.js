@@ -9,16 +9,17 @@ class QueueManager {
     this.queues = new Map();
   }
 
-  getQueue(name) {
+  getQueue(name, opts = {}) {
     if (!this.queues.has(name)) {
-      this.queues.set(name, new MessageQueue(name));
+      this.queues.set(name, new MessageQueue(name, opts.fanout));
     }
     return this.queues.get(name);
   }
 
   configureQueue(name, config) {
-    const queue = this.getQueue(name);
-    queue.configure(config);
+    const { fanout, ...rest } = config;
+    const queue = this.getQueue(name, { fanout });
+    queue.configure(rest);
   }
 
   enqueueJob(name, job) {

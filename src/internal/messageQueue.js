@@ -3,15 +3,17 @@
 // messageQueue.js
 
 class MessageQueue {
-  constructor(name) {
+  constructor(name, isFanout = false) {
     this.name = name;
+    this.isFanout = isFanout;
     this.jobs = [];
     this.prefetchCount = 1;
     this.indexKeys = [];
-    this.activeJobs = new Map(); // socketId => count
-    this.locks = new Set(); // keys currently being processed
-    this.subscribers = new Set(); // WebSocket clients
+    this.activeJobs = new Map(); // socketId => [jobs]
+    this.locks = new Set(); // for task queue only
+    this.subscribers = new Set();
   }
+
 
   configure({ prefetch, index }) {
     if (typeof prefetch === 'number') this.prefetchCount = prefetch;
@@ -19,9 +21,30 @@ class MessageQueue {
   }
 
   enqueue(job) {
-    this.jobs.push(job);
-    this.dispatch();
+    if (this.isFanout) {
+      // Push job to every subscriber’s personal queue
+      for (const socket of this.subscribers) {
+        const active = this.activeJobs.get(socket.id) || [];
+        if (active.length >= this.prefetchCount) continue;
+
+        const jobId = `${Date.now()}-${Math.random()}`;
+        socket.send(JSON.stringify({
+          type: 'job',
+          jobId,
+          data: job,
+          keyHash: null,
+        }));
+
+        active.push({ jobId, job });
+        this.activeJobs.set(socket.id, active);
+      }
+    } else {
+      // Task queue behavior
+      this.jobs.push(job);
+      this.dispatch();
+    }
   }
+
 
   subscribe(socket) {
     this.subscribers.add(socket);
@@ -33,26 +56,27 @@ class MessageQueue {
   }
 
   ack(jobId, keyHash, socket) {
-    const jobs = this.activeJobs.get(socket.id); // Get all active jobs for this socket
+    const jobs = this.activeJobs.get(socket.id);
+
     if (jobs) {
       const jobIndex = jobs.findIndex(job => job.jobId === jobId);
       if (jobIndex >= 0) {
-        this.locks.delete(keyHash); // Release the lock for the key
-        jobs.splice(jobIndex, 1); // Remove the acknowledged job from the active jobs list
-        this.activeJobs.set(socket.id, jobs); // Update the active jobs list for the socket
-        this.dispatch(); // Dispatch next job
+        if (!this.isFanout) this.locks.delete(keyHash);
+        jobs.splice(jobIndex, 1);
+        this.activeJobs.set(socket.id, jobs);
+        if (!this.isFanout) this.dispatch();
       } else {
-        // Handle error if the jobId doesn't match (optional)
         console.error("Job ID mismatch or invalid acknowledgment");
       }
     } else {
       console.error("No active jobs for this socket");
     }
-
   }
 
 
+
   dispatch() {
+    if (this.isFanout) return;
     for (const socket of this.subscribers) {
       const active = this.activeJobs.get(socket.id) || 0;
       const availableSlots = this.prefetchCount - active;

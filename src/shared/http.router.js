@@ -26,12 +26,12 @@ async function handleRequest(req, res) {
   }
 
   if (req.method === 'POST' && req.url === '/config') {
-    const { queue, prefetch, index } = await parseBody(req);
+    const { queue, prefetch, index, fanout } = await parseBody(req);
     if (!queue) {
       res.writeHead(400);
       return res.end('Missing queue');
     }
-    queueManager.configureQueue(queue, { prefetch, index });
+    queueManager.configureQueue(queue, { prefetch, index, fanout });
     res.writeHead(200);
     return res.end('Configured');
   }
