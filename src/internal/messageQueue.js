@@ -33,9 +33,15 @@ class MessageQueue {
   }
 
   ack(jobId, keyHash, socket) {
-    this.locks.delete(keyHash);
-    this.activeJobs.set(socket.id, (this.activeJobs.get(socket.id) || 1) - 1);
-    this.dispatch();
+    const job = this.activeJobs.get(socket.id);
+    if (job && job.jobId === jobId) {
+      this.locks.delete(keyHash); // Release the lock for the key
+      this.activeJobs.set(socket.id, { ...job, jobId: null }); // Mark job as completed for the socket
+      this.dispatch(); // Dispatch next job
+    } else {
+      // Handle error if the jobId doesn't match (optional)
+      console.error("Job ID mismatch or invalid acknowledgment");
+    }
   }
 
   dispatch() {
