@@ -47,26 +47,42 @@ class MessageQueue {
   dispatch() {
     for (const socket of this.subscribers) {
       const active = this.activeJobs.get(socket.id) || 0;
-      if (active >= this.prefetchCount) continue;
+      const availableSlots = this.prefetchCount - active;
+      if (availableSlots <= 0) continue;
 
-      for (let i = 0; i < this.jobs.length; i++) {
-        const job = this.jobs[i];
+      const jobsToProcess = this.jobs.slice(0, availableSlots); // Take the first `availableSlots` jobs
+      const duplicateJobs = [];
+
+      // Loop over the jobs to process
+      for (let i = 0; i < jobsToProcess.length; i++) {
+        const job = jobsToProcess[i];
         const keyHash = this.indexKeys.map(k => job[k]).join('|');
-        if (keyHash && this.locks.has(keyHash)) continue;
 
-        this.jobs.splice(i, 1);
-        this.locks.add(keyHash);
-        this.activeJobs.set(socket.id, active + 1);
+        if (keyHash && this.locks.has(keyHash)) {
+          duplicateJobs.push(job); // Collect duplicate jobs
+          continue; // Skip duplicate jobs
+        }
+
+        // Otherwise, process the job
+        this.jobs.splice(this.jobs.indexOf(job), 1);  // Remove the job from the queue
+        this.locks.add(keyHash);                      // Lock the key
+        this.activeJobs.set(socket.id, (this.activeJobs.get(socket.id) || 0) + 1);
+
         socket.send(JSON.stringify({
           type: 'job',
           jobId: `${Date.now()}-${Math.random()}`,
           data: job,
-          keyHash
+          keyHash,
         }));
-        break;
+      }
+
+      // Re-add duplicate jobs back to the queue for retrying later
+      for (const job of duplicateJobs) {
+        this.jobs.push(job); // Push back to the queue
       }
     }
   }
+
 }
 
 module.exports = MessageQueue;
