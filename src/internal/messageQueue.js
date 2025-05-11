@@ -21,13 +21,13 @@ class MessageQueue {
   }
 
   enqueue(job) {
+    const jobId = `${Date.now()}-${Math.random()}`;
     if (this.isFanout) {
       // Push job to every subscriber’s personal queue
       for (const socket of this.subscribers) {
         const active = this.activeJobs.get(socket.id) || [];
         if (active.length >= this.prefetchCount) continue;
 
-        const jobId = `${Date.now()}-${Math.random()}`;
         socket.send(JSON.stringify({
           type: 'job',
           jobId,
@@ -40,7 +40,7 @@ class MessageQueue {
       }
     } else {
       // Task queue behavior
-      this.jobs.push(job);
+      this.jobs.push({ job, jobId });
       this.dispatch();
     }
   }
@@ -56,19 +56,20 @@ class MessageQueue {
   }
 
   ack(jobId, socket) {
-    const jobs = this.activeJobs.get(socket.id);
+    const activeJobs = this.activeJobs.get(socket.id);
+    if (activeJobs) {
+      const jobIndex = activeJobs.findIndex(n => n.jobId === jobId);
 
-    if (jobs) {
-      const jobIndex = jobs.findIndex(job => job.jobId === jobId);
       if (jobIndex >= 0) {
         if (!this.isFanout) {
-          const job = jobs[jobIndex]
+          const job = activeJobs[jobIndex]
           const keyHash = this.indexKeys.map(k => job[k]).join('|');
           this.locks.delete(keyHash)
         }
+        activeJobs.splice(jobIndex, 1)
+        this.activeJobs.set(socket.id,activeJobs);
+        
 
-        jobs.splice(jobIndex, 1);
-        this.activeJobs.set(socket.id, jobs);
         if (!this.isFanout) this.dispatch();
       } else {
         console.error("Job ID mismatch or invalid acknowledgment");
@@ -82,10 +83,14 @@ class MessageQueue {
 
   dispatch() {
     if (this.isFanout) return;
-    let havedupes = false
+
+    if (!this.subscribers || this.subscribers.size < 1) return;
+
     for (const socket of this.subscribers) {
-      const active = this.activeJobs.get(socket.id) || 0;
-      const availableSlots = this.prefetchCount - active;
+
+      const activeJobs = this.activeJobs.get(socket.id) || [];
+      const availableSlots = this.prefetchCount - activeJobs.length;
+      
       if (availableSlots <= 0) continue;
 
       const jobsToProcess = this.jobs.splice(0, availableSlots); // Take the first `availableSlots` jobs
@@ -93,7 +98,7 @@ class MessageQueue {
 
       // Loop over the jobs to process
       for (let i = 0; i < jobsToProcess.length; i++) {
-        const job = jobsToProcess[i];
+        const { job, jobId } = jobsToProcess[i];
         const keyHash = this.indexKeys.map(k => job[k]).join('|');
 
         if (keyHash && this.locks.has(keyHash)) {
@@ -103,13 +108,14 @@ class MessageQueue {
 
         // Otherwise, process the job
         this.locks.add(keyHash); // Lock the key
-        this.activeJobs.set(socket.id, (this.activeJobs.get(socket.id) || 0) + 1);
+        activeJobs.push({ jobId, job });
+        this.activeJobs.set(socket.id, activeJobs);
 
         try {
           socket.send(JSON.stringify({
             type: 'job',
-            jobId: `${Date.now()}-${Math.random()}`,
             data: job,
+            jobId,
             keyHash,
           }));
         } catch (err) {
@@ -120,15 +126,16 @@ class MessageQueue {
       }
 
       if (duplicateJobs.length > 0) {
-        havedupes = true;
         // Re-add duplicate jobs back to the queue
         this.jobs.push(...duplicateJobs);
       }
 
     }
 
-    if (havedupes) {
-      setTimeout(this.dispatch, 100)
+    if (this.jobs.length > 0) {
+      setTimeout(() => {
+        this.dispatch()
+      }, 100)
     }
   }
 

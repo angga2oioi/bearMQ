@@ -13,9 +13,9 @@ function createWebSocketServer(server) {
         socket.id = `ws-${socketIdCounter++}`;
 
         socket.on('message', (msg) => {
+            const payload = JSON.parse(msg?.toString());
             try {
-                const payload = JSON.parse(msg);
-
+                
                 if (payload.type === 'subscribe' && payload.queue) {
                     queueManager.subscribeToQueue(payload.queue, socket);
                 }
@@ -24,7 +24,8 @@ function createWebSocketServer(server) {
                     queueManager.ackJob(payload.queue, payload.jobId, socket);
                 }
             } catch (e) {
-                console.error('Invalid WS message:', msg);
+
+                console.error('Invalid WS message:', e);
             }
         });
 
