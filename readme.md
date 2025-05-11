@@ -85,7 +85,7 @@ You can configure queues via an HTTP POST request to the `/config` endpoint:
     "queue": "yourQueueName",
     "prefetch": 1,
     "index": ["key1", "key2"],
-    "fanaout":false
+    "fanout":false
 }
 ```
 
