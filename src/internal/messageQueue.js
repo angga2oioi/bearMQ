@@ -60,10 +60,13 @@ class MessageQueue {
 
     if (jobs) {
       const jobIndex = jobs.findIndex(job => job.jobId === jobId);
-      const job = jobs[jobIndex]
-      const keyHash = this.indexKeys.map(k => job[k]).join('|');
       if (jobIndex >= 0) {
-        if (!this.isFanout) this.locks.delete(keyHash);
+        if (!this.isFanout) {
+          const job = jobs[jobIndex]
+          const keyHash = this.indexKeys.map(k => job[k]).join('|');
+          this.locks.delete(keyHash)
+        }
+
         jobs.splice(jobIndex, 1);
         this.activeJobs.set(socket.id, jobs);
         if (!this.isFanout) this.dispatch();
