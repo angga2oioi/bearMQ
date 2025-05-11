@@ -55,11 +55,13 @@ class MessageQueue {
     this.dispatch();
   }
 
-  ack(jobId, keyHash, socket) {
+  ack(jobId, socket) {
     const jobs = this.activeJobs.get(socket.id);
 
     if (jobs) {
       const jobIndex = jobs.findIndex(job => job.jobId === jobId);
+      const job = jobs[jobIndex]
+      const keyHash = this.indexKeys.map(k => job[k]).join('|');
       if (jobIndex >= 0) {
         if (!this.isFanout) this.locks.delete(keyHash);
         jobs.splice(jobIndex, 1);

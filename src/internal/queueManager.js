@@ -32,9 +32,9 @@ class QueueManager {
     queue.subscribe(socket);
   }
 
-  ackJob(name, jobId, keyHash, socket) {
+  ackJob(name, jobId, socket) {
     const queue = this.getQueue(name);
-    queue.ack(jobId, keyHash, socket);
+    queue.ack(jobId, socket);
   }
 }
 

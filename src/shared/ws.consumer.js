@@ -20,8 +20,8 @@ function createWebSocketServer(server) {
                     queueManager.subscribeToQueue(payload.queue, socket);
                 }
 
-                if (payload.type === 'ack' && payload.queue && payload.jobId && payload.keyHash) {
-                    queueManager.ackJob(payload.queue, payload.jobId, payload.keyHash, socket);
+                if (payload.type === 'ack' && payload.queue && payload.jobId) {
+                    queueManager.ackJob(payload.queue, payload.jobId, socket);
                 }
             } catch (e) {
                 console.error('Invalid WS message:', msg);
