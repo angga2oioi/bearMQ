@@ -62,13 +62,14 @@ class MessageQueue {
 
       if (jobIndex >= 0) {
         if (!this.isFanout) {
-          const job = activeJobs[jobIndex]
+          const { job } = activeJobs[jobIndex]
           const keyHash = this.indexKeys.map(k => job[k]).join('|');
+
           this.locks.delete(keyHash)
         }
         activeJobs.splice(jobIndex, 1)
-        this.activeJobs.set(socket.id,activeJobs);
-        
+        this.activeJobs.set(socket.id, activeJobs);
+
 
         if (!this.isFanout) this.dispatch();
       } else {
@@ -90,7 +91,7 @@ class MessageQueue {
 
       const activeJobs = this.activeJobs.get(socket.id) || [];
       const availableSlots = this.prefetchCount - activeJobs.length;
-      
+
       if (availableSlots <= 0) continue;
 
       const jobsToProcess = this.jobs.splice(0, availableSlots); // Take the first `availableSlots` jobs
@@ -99,10 +100,13 @@ class MessageQueue {
       // Loop over the jobs to process
       for (let i = 0; i < jobsToProcess.length; i++) {
         const { job, jobId } = jobsToProcess[i];
+        if (!job) {
+          continue;
+        }
         const keyHash = this.indexKeys.map(k => job[k]).join('|');
 
         if (keyHash && this.locks.has(keyHash)) {
-          duplicateJobs.push(job); // Collect duplicate jobs
+          duplicateJobs.push({ job, jobId }); // Collect duplicate jobs
           continue; // Skip duplicate jobs
         }
 
@@ -110,7 +114,6 @@ class MessageQueue {
         this.locks.add(keyHash); // Lock the key
         activeJobs.push({ jobId, job });
         this.activeJobs.set(socket.id, activeJobs);
-
         try {
           socket.send(JSON.stringify({
             type: 'job',
