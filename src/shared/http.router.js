@@ -15,12 +15,16 @@ function parseBody(req) {
 
 async function handleRequest(req, res) {
   if (req.method === 'POST' && req.url === '/enqueue') {
-    const { queue, job } = await parseBody(req);
-    if (!queue || !job) {
+    const { queue, jobs } = await parseBody(req);
+    if (!queue || !jobs) {
       res.writeHead(400);
       return res.end('Missing queue or job');
     }
-    queueManager.enqueueJob(queue, job);
+    
+    jobs.forEach(job => {
+      queueManager.enqueueJob(queue, job);
+    });
+
     res.writeHead(200);
     return res.end('Enqueued');
   }
