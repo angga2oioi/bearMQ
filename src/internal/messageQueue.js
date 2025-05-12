@@ -48,7 +48,7 @@ class MessageQueue {
       // Task queue behavior
       const keyHash = this.indexKeys.map(k => job[k]).join('|');
       this.jobs.push({ job, jobId, keyHash });
-      this.dispatch();
+       queueMicrotask(() => this.dispatch());
     }
   }
 
@@ -59,7 +59,7 @@ class MessageQueue {
       this.subscribers.delete(socket);
       this.activeJobs.delete(socket.id);
     });
-    this.dispatch();
+     queueMicrotask(() => this.dispatch());
   }
 
   ack(jobId, socket) {
@@ -77,7 +77,7 @@ class MessageQueue {
         this.activeJobs.set(socket.id, activeJobs);
 
 
-        if (!this.isFanout) this.dispatch();
+        if (!this.isFanout)  queueMicrotask(() => this.dispatch());
       } else {
         console.error("Job ID mismatch or invalid acknowledgment");
       }
@@ -141,9 +141,7 @@ class MessageQueue {
     }
 
     if (this.jobs.length > 0) {
-      setTimeout(() => {
-        this.dispatch()
-      },1)
+      queueMicrotask(() => this.dispatch());
     }
   }
 
