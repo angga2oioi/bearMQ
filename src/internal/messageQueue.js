@@ -16,7 +16,13 @@ class MessageQueue {
 
 
   configure({ prefetch, index }) {
-    if (typeof prefetch === 'number') this.prefetchCount = prefetch;
+
+    if (typeof prefetch === 'number') {
+      if (!isFinite(prefetch) || prefetch <= 0) {
+        prefetch = 1
+      }
+      this.prefetchCount = prefetch;
+    }
     if (Array.isArray(index)) this.indexKeys = index;
   }
 
@@ -35,12 +41,13 @@ class MessageQueue {
           keyHash: null,
         }));
 
-        active.push({ jobId, job });
+        active.push({ jobId, job, });
         this.activeJobs.set(socket.id, active);
       }
     } else {
       // Task queue behavior
-      this.jobs.push({ job, jobId });
+      const keyHash = this.indexKeys.map(k => job[k]).join('|');
+      this.jobs.push({ job, jobId, keyHash });
       this.dispatch();
     }
   }
@@ -62,10 +69,9 @@ class MessageQueue {
 
       if (jobIndex >= 0) {
         if (!this.isFanout) {
-          const { job } = activeJobs[jobIndex]
-          const keyHash = this.indexKeys.map(k => job[k]).join('|');
+          const { keyHash } = activeJobs[jobIndex]
+          if (keyHash) this.locks.delete(keyHash)
 
-          this.locks.delete(keyHash)
         }
         activeJobs.splice(jobIndex, 1)
         this.activeJobs.set(socket.id, activeJobs);
@@ -99,20 +105,19 @@ class MessageQueue {
 
       // Loop over the jobs to process
       for (let i = 0; i < jobsToProcess.length; i++) {
-        const { job, jobId } = jobsToProcess[i];
+        const { job, keyHash, jobId } = jobsToProcess[i];
         if (!job) {
           continue;
         }
-        const keyHash = this.indexKeys.map(k => job[k]).join('|');
 
         if (keyHash && this.locks.has(keyHash)) {
-          duplicateJobs.push({ job, jobId }); // Collect duplicate jobs
+          duplicateJobs.push({ job, keyHash, jobId }); // Collect duplicate jobs
           continue; // Skip duplicate jobs
         }
 
         // Otherwise, process the job
         this.locks.add(keyHash); // Lock the key
-        activeJobs.push({ jobId, job });
+        activeJobs.push({ jobId, job, keyHash });
         this.activeJobs.set(socket.id, activeJobs);
         try {
           socket.send(JSON.stringify({
@@ -138,7 +143,7 @@ class MessageQueue {
     if (this.jobs.length > 0) {
       setTimeout(() => {
         this.dispatch()
-      }, 100)
+      },1)
     }
   }
 
