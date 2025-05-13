@@ -48,7 +48,7 @@ class MessageQueue {
       // Task queue behavior
       const keyHash = this.indexKeys.map(k => job[k]).join('|');
       this.jobs.push({ job, jobId, keyHash });
-       queueMicrotask(() => this.dispatch());
+      queueMicrotask(() => this.dispatch());
     }
   }
 
@@ -59,7 +59,7 @@ class MessageQueue {
       this.subscribers.delete(socket);
       this.activeJobs.delete(socket.id);
     });
-     queueMicrotask(() => this.dispatch());
+    queueMicrotask(() => this.dispatch());
   }
 
   ack(jobId, socket) {
@@ -77,7 +77,7 @@ class MessageQueue {
         this.activeJobs.set(socket.id, activeJobs);
 
 
-        if (!this.isFanout)  queueMicrotask(() => this.dispatch());
+        if (!this.isFanout) queueMicrotask(() => this.dispatch());
       } else {
         console.error("Job ID mismatch or invalid acknowledgment");
       }
@@ -103,34 +103,29 @@ class MessageQueue {
       const jobsToProcess = this.jobs.splice(0, availableSlots); // Take the first `availableSlots` jobs
       const duplicateJobs = [];
 
-      // Loop over the jobs to process
-      for (let i = 0; i < jobsToProcess.length; i++) {
-        const { job, keyHash, jobId } = jobsToProcess[i];
-        if (!job) {
-          continue;
-        }
+      // Use a more optimized loop and reduce redundant lookups
+      for (const jobData of jobsToProcess) {
+        if (!jobData) continue; // Prevent processing null or undefined items
+
+        const { job, keyHash, jobId } = jobData;
+        if (!job) continue;
 
         if (keyHash && this.locks.has(keyHash)) {
           duplicateJobs.push({ job, keyHash, jobId }); // Collect duplicate jobs
           continue; // Skip duplicate jobs
         }
 
-        // Otherwise, process the job
+        // Process the job
         this.locks.add(keyHash); // Lock the key
         activeJobs.push({ jobId, job, keyHash });
         this.activeJobs.set(socket.id, activeJobs);
+
         try {
-          socket.send(JSON.stringify({
-            type: 'job',
-            data: job,
-            jobId,
-            keyHash,
-          }));
+          socket.send(JSON.stringify({ type: 'job', data: job, jobId, keyHash }));
         } catch (err) {
           console.error("Failed to send job:", err);
-          this.locks.delete(keyHash); // Ensure the lock is released if sending fails
+          this.locks.delete(keyHash);
         }
-
       }
 
       if (duplicateJobs.length > 0) {
