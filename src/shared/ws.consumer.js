@@ -23,6 +23,7 @@ function createWebSocketServer(server) {
                     queueManager.ackJob(payload.queue, payload.jobId, socket);
                 }
             } catch (e) {
+
                 console.error('Invalid WS message:', e);
             }
         });

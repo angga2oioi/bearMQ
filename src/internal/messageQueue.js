@@ -56,12 +56,10 @@ class MessageQueue {
     this.subscribers.add(socket);
 
     socket.on('close', () => {
-      console.log("close")
       this.subscribers.delete(socket);
       this.activeJobs.delete(socket.id);
     });
     socket.on('error', () => {
-      console.log("error")
       this.subscribers.delete(socket);
       this.activeJobs.delete(socket.id);
     });
@@ -70,6 +68,7 @@ class MessageQueue {
 
   ack(jobId, socket) {
     const activeJobs = this.activeJobs.get(socket.id);
+
     if (activeJobs) {
       const jobIndex = activeJobs.findIndex(n => n.jobId === jobId);
 
@@ -108,7 +107,8 @@ class MessageQueue {
         if (availableSlots <= 0) continue;
         jobsToProcess = this.jobs.splice(0, availableSlots); // Take the first `availableSlots` jobs
       } else {
-        jobsToProcess = this.jobs
+        jobsToProcess = this.jobs.slice();
+        this.jobs.length = 0;
       }
 
       const duplicateJobs = [];
