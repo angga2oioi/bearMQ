@@ -7,7 +7,6 @@ class MessageQueue {
     this.name = name;
     this.isFanout = isFanout;
     this.jobs = [];
-    this.prefetchCount;
     this.indexKeys = [];
     this.activeJobs = new Map(); // socketId => [jobs]
     this.locks = new Set(); // for task queue only
@@ -15,23 +14,19 @@ class MessageQueue {
   }
 
 
-  configure({ prefetch, index }) {
+  configure({ index }) {
 
-    if (typeof prefetch === 'number') {
-      if (isFinite(prefetch) && prefetch > 0) {
-        this.prefetchCount = prefetch;
-      }
-    }
     if (Array.isArray(index)) this.indexKeys = index;
   }
 
   enqueue(job) {
     const jobId = `${Date.now()}-${Math.random()}`;
+
     if (this.isFanout) {
       // Push job to every subscriber’s personal queue
       for (const socket of this.subscribers) {
         const active = this.activeJobs.get(socket.id) || [];
-        if (this.prefetchCount && active.length >= this.prefetchCount) continue;
+        if (socket.prefetchCount && active.length >= socket.prefetchCount) continue;
 
         socket.send(JSON.stringify({
           type: 'job',
@@ -45,10 +40,24 @@ class MessageQueue {
       }
     } else {
       // Task queue behavior
-      const keyHash = this.indexKeys.map(k => job[k]).join('|');
-      this.jobs.push({ job, jobId, keyHash });
+      let jobItem
+      if (this.indexKeys.length > 0) {
+        const keyHash = this.indexKeys.map(k => job[k]).join('|');
+
+        if (keyHash && this.locks.has(keyHash)) {
+          setImmediate(() => this.enqueue(job))
+          return null
+        }
+        this.locks.add(keyHash)
+        jobItem = { job, jobId, keyHash };
+      } else {
+        jobItem = { job, jobId };
+      }
+
+      this.jobs.push(jobItem);
+      
       for (const socket of this.subscribers) {
-        setImmediate(()=>this.dispatch(socket))
+        setImmediate(() => this.dispatch(socket))
       }
     }
   }
@@ -97,13 +106,13 @@ class MessageQueue {
 
   dispatch(socket) {
     if (this.isFanout) return;
-
+    if(this.jobs.length <1) return
     if (!socket) return;
 
     let jobsToProcess = []
     const activeJobs = this.activeJobs.get(socket.id) || [];
-    if (this.prefetchCount) {
-      const availableSlots = this.prefetchCount - activeJobs.length;
+    if (socket.prefetchCount) {
+      const availableSlots = socket.prefetchCount - activeJobs.length;
       if (availableSlots <= 0) return;
       jobsToProcess = this.jobs.splice(0, availableSlots); // Take the first `availableSlots` jobs
     } else {
@@ -111,42 +120,24 @@ class MessageQueue {
       this.jobs.length = 0;
     }
 
-    const duplicateJobs = [];
-
-    // Use a more optimized loop and reduce redundant lookups
-    for (const jobData of jobsToProcess) {
-      if (!jobData) continue; // Prevent processing null or undefined items
-
-      const { job, keyHash, jobId } = jobData;
-      if (!job) continue;
-
-      if (keyHash && this.locks.has(keyHash)) {
-        duplicateJobs.push({ job, keyHash, jobId }); // Collect duplicate jobs
-        continue; // Skip duplicate jobs
-      }
-
-      // Process the job
-      this.locks.add(keyHash); // Lock the key
-      activeJobs.push({ jobId, job, keyHash });
-      this.activeJobs.set(socket.id, activeJobs);
-
-      try {
-        socket.send(JSON.stringify({ type: 'job', data: job, jobId, keyHash }));
-      } catch (err) {
-        console.error("Failed to send job:", err);
-        this.locks.delete(keyHash);
-      }
+    if(jobsToProcess.length < 1){
+      return
     }
 
-    if (duplicateJobs.length > 0) {
-      // Re-add duplicate jobs back to the queue
-      this.jobs.push(...duplicateJobs);
+    try {
+      socket.send(JSON.stringify({ type: 'job', data: jobsToProcess,socketId:socket.id }));
+    } catch (err) {
+      console.error("Failed to send job:", err);
     }
+
+    activeJobs.push(...jobsToProcess);
+
+    this.activeJobs.set(socket.id, activeJobs);
 
     if (this.jobs.length > 0) {
-      setTimeout(() => {
+      setImmediate(() => {
         this.dispatch(socket)
-      }, 1);
+      });
     }
   }
 

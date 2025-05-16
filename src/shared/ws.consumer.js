@@ -16,6 +16,9 @@ function createWebSocketServer(server) {
             const payload = JSON.parse(msg?.toString());
             try {
                 if (payload.type === 'subscribe' && payload.queue) {
+                    if(payload.prefetch){
+                        socket.prefetchCount = payload.prefetch
+                    }
                     queueManager.subscribeToQueue(payload.queue, socket);
                 }
 
