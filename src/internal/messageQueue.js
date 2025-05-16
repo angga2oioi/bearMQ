@@ -125,7 +125,7 @@ class MessageQueue {
     }
 
     try {
-      socket.send(JSON.stringify({ type: 'job', data: jobsToProcess,socketId:socket.id }));
+      socket.send(JSON.stringify({ type: 'job', data: jobsToProcess, }));
     } catch (err) {
       console.error("Failed to send job:", err);
     }
