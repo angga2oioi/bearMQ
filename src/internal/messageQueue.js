@@ -48,7 +48,7 @@ class MessageQueue {
       const keyHash = this.indexKeys.map(k => job[k]).join('|');
       this.jobs.push({ job, jobId, keyHash });
       for (const socket of this.subscribers) {
-        setImmediate(() => this.dispatch(socket))
+        setImmediate(()=>this.dispatch(socket))
       }
     }
   }
