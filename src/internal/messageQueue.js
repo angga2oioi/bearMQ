@@ -7,7 +7,7 @@ class MessageQueue {
     this.name = name;
     this.isFanout = isFanout;
     this.jobs = [];
-    this.prefetchCount = 1;
+    this.prefetchCount;
     this.indexKeys = [];
     this.activeJobs = new Map(); // socketId => [jobs]
     this.locks = new Set(); // for task queue only
@@ -18,10 +18,9 @@ class MessageQueue {
   configure({ prefetch, index }) {
 
     if (typeof prefetch === 'number') {
-      if (!isFinite(prefetch) || prefetch <= 0) {
-        prefetch = 1
+      if (isFinite(prefetch) && prefetch > 0) {
+        this.prefetchCount = prefetch;
       }
-      this.prefetchCount = prefetch;
     }
     if (Array.isArray(index)) this.indexKeys = index;
   }
@@ -32,7 +31,7 @@ class MessageQueue {
       // Push job to every subscriber’s personal queue
       for (const socket of this.subscribers) {
         const active = this.activeJobs.get(socket.id) || [];
-        if (active.length >= this.prefetchCount) continue;
+        if (this.prefetchCount && active.length >= this.prefetchCount) continue;
 
         socket.send(JSON.stringify({
           type: 'job',
@@ -48,18 +47,25 @@ class MessageQueue {
       // Task queue behavior
       const keyHash = this.indexKeys.map(k => job[k]).join('|');
       this.jobs.push({ job, jobId, keyHash });
-      queueMicrotask(() => this.dispatch());
+      this.dispatch()
     }
   }
 
 
   subscribe(socket) {
     this.subscribers.add(socket);
+
     socket.on('close', () => {
+      console.log("close")
       this.subscribers.delete(socket);
       this.activeJobs.delete(socket.id);
     });
-    queueMicrotask(() => this.dispatch());
+    socket.on('error', () => {
+      console.log("error")
+      this.subscribers.delete(socket);
+      this.activeJobs.delete(socket.id);
+    });
+    this.dispatch();
   }
 
   ack(jobId, socket) {
@@ -77,7 +83,7 @@ class MessageQueue {
         this.activeJobs.set(socket.id, activeJobs);
 
 
-        if (!this.isFanout) queueMicrotask(() => this.dispatch());
+        if (!this.isFanout) this.dispatch();
       } else {
         console.error("Job ID mismatch or invalid acknowledgment");
       }
@@ -95,12 +101,16 @@ class MessageQueue {
 
     for (const socket of this.subscribers) {
 
+      let jobsToProcess = []
       const activeJobs = this.activeJobs.get(socket.id) || [];
-      const availableSlots = this.prefetchCount - activeJobs.length;
+      if (this.prefetchCount) {
+        const availableSlots = this.prefetchCount - activeJobs.length;
+        if (availableSlots <= 0) continue;
+        jobsToProcess = this.jobs.splice(0, availableSlots); // Take the first `availableSlots` jobs
+      } else {
+        jobsToProcess = this.jobs
+      }
 
-      if (availableSlots <= 0) continue;
-
-      const jobsToProcess = this.jobs.splice(0, availableSlots); // Take the first `availableSlots` jobs
       const duplicateJobs = [];
 
       // Use a more optimized loop and reduce redundant lookups
@@ -136,7 +146,9 @@ class MessageQueue {
     }
 
     if (this.jobs.length > 0) {
-      queueMicrotask(() => this.dispatch());
+      setTimeout(() => {
+        this.dispatch()
+      });
     }
   }
 
