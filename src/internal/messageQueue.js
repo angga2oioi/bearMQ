@@ -47,7 +47,9 @@ class MessageQueue {
       // Task queue behavior
       const keyHash = this.indexKeys.map(k => job[k]).join('|');
       this.jobs.push({ job, jobId, keyHash });
-      this.dispatch()
+      for (const socket of this.subscribers) {
+        setImmediate(() => this.dispatch(socket))
+      }
     }
   }
 
@@ -63,7 +65,7 @@ class MessageQueue {
       this.subscribers.delete(socket);
       this.activeJobs.delete(socket.id);
     });
-    this.dispatch();
+    this.dispatch(socket);
   }
 
   ack(jobId, socket) {
@@ -82,7 +84,7 @@ class MessageQueue {
         this.activeJobs.set(socket.id, activeJobs);
 
 
-        if (!this.isFanout) this.dispatch();
+        if (!this.isFanout) this.dispatch(socket);
       } else {
         console.error("Job ID mismatch or invalid acknowledgment");
       }
@@ -93,62 +95,58 @@ class MessageQueue {
 
 
 
-  dispatch() {
+  dispatch(socket) {
     if (this.isFanout) return;
 
-    if (!this.subscribers || this.subscribers.size < 1) return;
+    if (!socket) return;
 
-    for (const socket of this.subscribers) {
+    let jobsToProcess = []
+    const activeJobs = this.activeJobs.get(socket.id) || [];
+    if (this.prefetchCount) {
+      const availableSlots = this.prefetchCount - activeJobs.length;
+      if (availableSlots <= 0) return;
+      jobsToProcess = this.jobs.splice(0, availableSlots); // Take the first `availableSlots` jobs
+    } else {
+      jobsToProcess = this.jobs.slice();
+      this.jobs.length = 0;
+    }
 
-      let jobsToProcess = []
-      const activeJobs = this.activeJobs.get(socket.id) || [];
-      if (this.prefetchCount) {
-        const availableSlots = this.prefetchCount - activeJobs.length;
-        if (availableSlots <= 0) continue;
-        jobsToProcess = this.jobs.splice(0, availableSlots); // Take the first `availableSlots` jobs
-      } else {
-        jobsToProcess = this.jobs.slice();
-        this.jobs.length = 0;
+    const duplicateJobs = [];
+
+    // Use a more optimized loop and reduce redundant lookups
+    for (const jobData of jobsToProcess) {
+      if (!jobData) continue; // Prevent processing null or undefined items
+
+      const { job, keyHash, jobId } = jobData;
+      if (!job) continue;
+
+      if (keyHash && this.locks.has(keyHash)) {
+        duplicateJobs.push({ job, keyHash, jobId }); // Collect duplicate jobs
+        continue; // Skip duplicate jobs
       }
 
-      const duplicateJobs = [];
+      // Process the job
+      this.locks.add(keyHash); // Lock the key
+      activeJobs.push({ jobId, job, keyHash });
+      this.activeJobs.set(socket.id, activeJobs);
 
-      // Use a more optimized loop and reduce redundant lookups
-      for (const jobData of jobsToProcess) {
-        if (!jobData) continue; // Prevent processing null or undefined items
-
-        const { job, keyHash, jobId } = jobData;
-        if (!job) continue;
-
-        if (keyHash && this.locks.has(keyHash)) {
-          duplicateJobs.push({ job, keyHash, jobId }); // Collect duplicate jobs
-          continue; // Skip duplicate jobs
-        }
-
-        // Process the job
-        this.locks.add(keyHash); // Lock the key
-        activeJobs.push({ jobId, job, keyHash });
-        this.activeJobs.set(socket.id, activeJobs);
-
-        try {
-          socket.send(JSON.stringify({ type: 'job', data: job, jobId, keyHash }));
-        } catch (err) {
-          console.error("Failed to send job:", err);
-          this.locks.delete(keyHash);
-        }
+      try {
+        socket.send(JSON.stringify({ type: 'job', data: job, jobId, keyHash }));
+      } catch (err) {
+        console.error("Failed to send job:", err);
+        this.locks.delete(keyHash);
       }
+    }
 
-      if (duplicateJobs.length > 0) {
-        // Re-add duplicate jobs back to the queue
-        this.jobs.push(...duplicateJobs);
-      }
-
+    if (duplicateJobs.length > 0) {
+      // Re-add duplicate jobs back to the queue
+      this.jobs.push(...duplicateJobs);
     }
 
     if (this.jobs.length > 0) {
       setTimeout(() => {
-        this.dispatch()
-      });
+        this.dispatch(socket)
+      }, 1);
     }
   }
 
