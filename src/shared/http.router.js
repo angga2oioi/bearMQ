@@ -14,6 +14,13 @@ function parseBody(req) {
 }
 
 async function handleRequest(req, res) {
+
+  if (req.method === 'GET' && req.url === '/ping') {
+
+    res.writeHead(200);
+    return res.end('pong');
+  }
+
   if (req.method === 'POST' && req.url === '/enqueue') {
     const { queue, jobs } = await parseBody(req);
     if (!queue || !jobs) {
@@ -28,6 +35,7 @@ async function handleRequest(req, res) {
     res.writeHead(200);
     return res.end('Enqueued');
   }
+
 
   if (req.method === 'POST' && req.url === '/config') {
     const { queue, index, fanout } = await parseBody(req);
