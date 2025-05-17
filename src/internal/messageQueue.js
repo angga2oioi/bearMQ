@@ -45,7 +45,7 @@ class MessageQueue {
         const keyHash = this.indexKeys.map(k => job[k]).join('|');
 
         if (keyHash && this.locks.has(keyHash)) {
-          setImmediate(() => this.enqueue(job))
+          setTimeout(() => this.enqueue(job),0)
           return null
         }
 

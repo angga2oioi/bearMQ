@@ -21,9 +21,9 @@ async function handleRequest(req, res) {
       return res.end('Missing queue or job');
     }
 
-    jobs.forEach(job => {
+    for (const job of jobs) {
       queueManager.enqueueJob(queue, job);
-    });
+    }
 
     res.writeHead(200);
     return res.end('Enqueued');
