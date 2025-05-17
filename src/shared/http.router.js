@@ -20,7 +20,7 @@ async function handleRequest(req, res) {
       res.writeHead(400);
       return res.end('Missing queue or job');
     }
-    
+
     jobs.forEach(job => {
       queueManager.enqueueJob(queue, job);
     });

@@ -48,6 +48,7 @@ class MessageQueue {
           setImmediate(() => this.enqueue(job))
           return null
         }
+
         this.locks.add(keyHash)
         jobItem = { job, jobId, keyHash };
       } else {
@@ -55,9 +56,9 @@ class MessageQueue {
       }
 
       this.jobs.push(jobItem);
-      
+
       for (const socket of this.subscribers) {
-        setImmediate(() => this.dispatch(socket))
+        this.dispatch(socket)
       }
     }
   }
@@ -106,7 +107,7 @@ class MessageQueue {
 
   dispatch(socket) {
     if (this.isFanout) return;
-    if(this.jobs.length <1) return
+    if (this.jobs.length < 1) return
     if (!socket) return;
 
     let jobsToProcess = []
@@ -120,7 +121,7 @@ class MessageQueue {
       this.jobs.length = 0;
     }
 
-    if(jobsToProcess.length < 1){
+    if (jobsToProcess.length < 1) {
       return
     }
 
