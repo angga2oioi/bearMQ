@@ -30,9 +30,7 @@ class MessageQueue {
 
         socket.send(JSON.stringify({
           type: 'job',
-          jobId,
-          data: job,
-          keyHash: null,
+          data: [{ jobId, job, }],
         }));
 
         active.push({ jobId, job, });
@@ -45,7 +43,7 @@ class MessageQueue {
         const keyHash = this.indexKeys.map(k => job[k]).join('|');
 
         if (keyHash && this.locks.has(keyHash)) {
-          setTimeout(() => this.enqueue(job),0)
+          setTimeout(() => this.enqueue(job), 0)
           return null
         }
 
