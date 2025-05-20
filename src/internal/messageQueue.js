@@ -8,6 +8,7 @@ class MessageQueue {
     this.isFanout = isFanout;
     this.jobs = [];
     this.indexKeys = [];
+    this.subscriberIndex = 0
     this.activeJobs = new Map(); // socketId => [jobs]
     this.locks = new Set(); // for task queue only
     this.subscribers = new Set();
@@ -54,9 +55,16 @@ class MessageQueue {
       }
 
       this.jobs.push(jobItem);
+      if (this.subscribers.size > 0) {
+        if (this.subscriberIndex >= this.subscribers.size) {
+          this.subscriberIndex = 0;
+        }
 
-      for (const socket of this.subscribers) {
-        this.dispatch(socket)
+        const subscribersArray = Array.from(this.subscribers);
+        const subscriber = subscribersArray[this.subscriberIndex];
+        this.dispatch(subscriber);
+
+        this.subscriberIndex += 1;
       }
     }
   }
